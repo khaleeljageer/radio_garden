@@ -1,32 +1,57 @@
-import constants as API
-import requests
 import json
-import update_github
+import logging
+import os
+from datetime import datetime
 
-def connect():
+import requests
+import yaml
+from github import Github
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+THIS_DIR: str = os.path.dirname(os.path.abspath(__file__))
+
+
+def connect(config: dict) -> dict:
     try:
-        respone = requests.get(API.RADIO_URL)
-        if(respone.ok):
+        respone = requests.get(config["RADIO_URL"])
+        if respone.ok:
             data = respone.json()
-            return data['data']
+            return data["data"]
         else:
-            return {'list':[]}
+            return {"list": []}
     except:
-        return {'list':[]}
+        return {"list": []}
 
-def get_india(list_array):
-    output_dict = [item for item in list_array if item['country'] == 'India' or item['country'] == 'Sri Lanka']
-    output_json = json.dumps({'list':output_dict}, indent=4, sort_keys=True)
+
+def get_india(list_array: list) -> str:
+    output_dict = [
+        item
+        for item in list_array
+        if item["country"] == "India" or item["country"] == "Sri Lanka"
+    ]
+    output_json = json.dumps({"list": output_dict}, indent=4, sort_keys=True)
     return output_json
 
+
+def update_github(data: dict, path_: str, config: dict):
+    repo = Github(config["ACCESS_TOKEN"]).get_repo(config["REPO_NAME"])
+    json_file = repo.get_contents(path_)
+    now: str = datetime.now().isoformat(" ", "seconds")
+    commit_message = f"update {json_file.name} @ {now}"
+    repo.update_file(json_file.path, commit_message, data, json_file.sha)
+    logger.info("updated %s @ %s", json_file.name, now)
+
+
 if __name__ == "__main__":
-    response = connect()
-    radio_list = response['list']
-    if radio_list.__len__() > 0:
+    f = open(os.path.join(THIS_DIR, "config.yaml"))
+    config = yaml.safe_load(f)
+    response = connect(config)
+    radio_list = response["list"]
+    if radio_list:
         india_list = get_india(radio_list)
-        update = update_github.UpdateGithub()
-        update.update_github(india_list)
-        print('File updated...')
+        update_github(india_list, "radio_list.json", config)
+        logger.info("File updated...")
     else:
-        print('Empty Response')
-    
+        logger.info("Empty Response")
